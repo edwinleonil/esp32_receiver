@@ -1,48 +1,76 @@
 /*
- *  ESP32 Receiver using ESP-NOW
- *  - Sets an LED connected to GPIO 18 to ON or OFF based on received data
+ *  RECEIVER (ESP32 #2)
+ *  - speedVal in range: -255..255
+ *    * >0 => forward
+ *    * <0 => backward
+ *    *  0 => stop
+ *
+ *  Uses TWO pins for PWM on the motor driver (IN1 and IN2), no separate ENABLE pin.
  */
 
 #include <esp_now.h>
 #include <WiFi.h>
 
-// Structure matching the transmitter
 typedef struct struct_message {
-  bool ledState;  // true = ON, false = OFF
+  int16_t speedVal;  // -255..255
 } struct_message;
 
-// Create a struct_message to hold the incoming data
 struct_message incomingData;
 
-// Callback function that will be executed when data is received
-void onDataRecv(const uint8_t * mac, const uint8_t *incomingDataBytes, int len) {
-  // Copy incoming bytes into our structure
+// Assign two GPIO pins for the motor driver inputs
+const int in1Pin = 19;  // PWM channel 0
+const int in2Pin = 18;  // PWM channel 1
+
+// LEDC (PWM) setup
+// We'll use two different channels, same frequency, same resolution:
+const int pwmCh1   = 0;      // for in1Pin
+const int pwmCh2   = 1;      // for in2Pin
+const int pwmFreq  = 5000;   // 5 kHz
+const int pwmRes   = 8;      // 8-bit => 0..255 duty cycle
+
+// Callback: triggered when data is received via ESP-NOW
+void onDataRecv(const uint8_t* mac, const uint8_t* incomingDataBytes, int len) {
   memcpy(&incomingData, incomingDataBytes, sizeof(incomingData));
 
-  Serial.print("Data received from MAC: ");
-  Serial.printf("%02X:%02X:%02X:%02X:%02X:%02X\n", 
-                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  int16_t speed = incomingData.speedVal;
+  Serial.print("Received speedVal: ");
+  Serial.println(speed);
 
-  // Set LED state
-  if (incomingData.ledState) {
-    digitalWrite(18, HIGH);
-    Serial.println("LED turned ON");
-  } else {
-    digitalWrite(18, LOW);
-    Serial.println("LED turned OFF");
+  if (speed > 0) {
+    // FORWARD: IN1 = PWM, IN2 = 0
+    ledcWrite(pwmCh1, speed);         // duty cycle = speed (1..255)
+    ledcWrite(pwmCh2, 0);            // no output on IN2
+    Serial.println("Motor FORWARD");
+  }
+  else if (speed < 0) {
+    // BACKWARD: IN2 = PWM, IN1 = 0
+    ledcWrite(pwmCh1, 0);
+    ledcWrite(pwmCh2, abs(speed));    // duty cycle = abs(speed) (1..255)
+    Serial.println("Motor BACKWARD");
+  }
+  else {
+    // STOP: IN1 = 0, IN2 = 0
+    ledcWrite(pwmCh1, 0);
+    ledcWrite(pwmCh2, 0);
+    Serial.println("Motor STOPPED");
   }
 }
 
 void setup() {
-  // Initialize Serial Monitor
   Serial.begin(115200);
-
-  // Set device as a Wi-Fi Station
   WiFi.mode(WIFI_STA);
 
-  // Initialize LED pin
-  pinMode(18, OUTPUT);
-  digitalWrite(18, LOW); // default OFF
+  // Configure PWM channels
+  ledcSetup(pwmCh1, pwmFreq, pwmRes);
+  ledcSetup(pwmCh2, pwmFreq, pwmRes);
+
+  // Attach channels to the pins
+  ledcAttachPin(in1Pin, pwmCh1);
+  ledcAttachPin(in2Pin, pwmCh2);
+
+  // Start both at 0 (stopped)
+  ledcWrite(pwmCh1, 0);
+  ledcWrite(pwmCh2, 0);
 
   // Initialize ESP-NOW
   if (esp_now_init() != ESP_OK) {
@@ -50,14 +78,13 @@ void setup() {
     return;
   }
 
-  // Register the receive callback function
+  // Register the receive callback
   esp_now_register_recv_cb(onDataRecv);
 
-  Serial.println("Receiver ready. LED on GPIO 18 is set OFF by default.");
+  Serial.println("Receiver ready. Using two PWM pins (no enable).");
 }
 
 void loop() {
-  // In this example, nothing to do here:
-  // The onDataRecv callback handles everything.
+  // Everything is handled in onDataRecv.
   delay(1000);
 }
