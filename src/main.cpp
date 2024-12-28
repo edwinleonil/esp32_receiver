@@ -1,16 +1,15 @@
 /*
  *  ESP32 Receiver using ESP-NOW
+ *  Prints out the received upVal and downVal in the Serial Monitor
  */
 
 #include <esp_now.h>
 #include <WiFi.h>
 
-// - Blue receiver: 08:D1:F9:EC:FB:34
-// - Red transmitter:  B0:A7:32:2E:44:8C
-
-// Structure matching the one from the transmitter
+// Structure matching the transmitter
 typedef struct struct_message {
-  char msg[32];
+  int upVal;
+  int downVal;
 } struct_message;
 
 // Create a struct_message to hold the incoming data
@@ -21,17 +20,19 @@ void onDataRecv(const uint8_t * mac, const uint8_t *incomingDataBytes, int len) 
   // Copy incoming bytes into our structure
   memcpy(&incomingData, incomingDataBytes, sizeof(incomingData));
 
-  Serial.print("Bytes received from: ");
-  Serial.printf("%02X:%02X:%02X:%02X:%02X:%02X \n", 
+  Serial.print("Data received from: ");
+  Serial.printf("%02X:%02X:%02X:%02X:%02X:%02X\n", 
                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
-  Serial.print("Message: ");
-  Serial.println(incomingData.msg);
+  Serial.print("upVal: ");
+  Serial.print(incomingData.upVal);
+  Serial.print("  |  downVal: ");
+  Serial.println(incomingData.downVal);
 }
 
 void setup() {
   // Initialize Serial Monitor
-  Serial.begin(9600);
+  Serial.begin(115200);
 
   // Set device as a Wi-Fi Station
   WiFi.mode(WIFI_STA);
@@ -44,10 +45,11 @@ void setup() {
 
   // Register the receive callback function
   esp_now_register_recv_cb(onDataRecv);
+
+  Serial.println("Receiver ready.");
 }
 
 void loop() {
-  // In this example, we just wait for incoming data. 
-  // The onDataRecv callback handles everything else.
+  // Do nothing in the main loop - data is processed in onDataRecv callback
   delay(1000);
 }
